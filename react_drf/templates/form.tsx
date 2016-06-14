@@ -1,8 +1,8 @@
-interface Props {
+interface {{ name }}Props {
     handleSubmit: (recipe: any) => void;
 }
 
-export abstract class AutoRecipeForm extends React.Component<Props, any> {
+export abstract class {{ name }} extends React.Component<{{ name }}Props, any> {
     optional_fields = [
         {% for field in optional_fields %}
         '{{ field }}',
@@ -23,16 +23,6 @@ export abstract class AutoRecipeForm extends React.Component<Props, any> {
         };
         return fields;
     }
-
-    {% for field in fields %}
-    _field_{{ field.name }} = () => {
-        return <input onChange={this.handleChange} type="text" name="{{ field.name }}" value={this.state.{{ field.name }}}></input>;
-    };
-
-    get {{ field.name }}() {
-        return this._field_{{ field.name }}();
-    };
-    {% endfor %}
 
     handleSubmit = (event: any) => {
         const purgedOfOptionalFields = _.reduce(this.state as any, (result: any, value: any, key: any) => {

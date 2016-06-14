@@ -30,13 +30,14 @@ def generate_interface(SourceSerializer):
 
 def generate_form(SourceSerializer):
     request = factory.get('/')
-    request.user = get_user_model()
+    request.user = get_user_model()()
 
     serializer_instance = SourceSerializer(context={'request': request})
     metadata_handler = SimpleMetadata()
     serializer_metadata = metadata_handler.get_serializer_info(serializer_instance)
 
     context = {
+        'name': SourceSerializer.__name__.replace('Serializer', 'Form'),
         'optional_fields': [],
         'fields': [],
     }

@@ -10,7 +10,7 @@ class Command(AppCommand):
         print("/* tslint:disable */\nimport * as React from 'react';")
         for name, val in app.module.serializers.__dict__.items():
             try:
-                if issubclass(val, serializers.ModelSerializer) and val.__name__ == 'RecipeSerializer':
+                if issubclass(val, serializers.ModelSerializer) and val.__name__ in ['RecipeSerializer', 'DaySerializer']:
                     # generator.generate_interface(val)
                     generator.generate_form(val)
             except TypeError as e:
