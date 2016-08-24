@@ -56,6 +56,48 @@ class Xenum(IntEnum, metaclass = XenumMeta):
         return obj
 
 
+import collections
+
+class DenumMeta(type):
+    @classmethod
+    def __prepare__(self, name, bases):
+        return collections.OrderedDict()
+
+    def __new__(cls, name, bases, attrs):
+        ATTRS_TO_EXCLUDE = ['__module__', '__qualname__']
+
+        member_candidates = collections.OrderedDict()
+
+        for attr_name, attr_value in attrs.items():
+            if attr_name not in ATTRS_TO_EXCLUDE:
+                member_candidates[attr_name] = attr_value
+
+        actual_members = {}
+        ordered = collections.OrderedDict()
+
+        for member_name, (value, label) in member_candidates.items():
+            actual_members[member_name] = value
+            ordered[member_name] = label
+
+        attrs['_ordered'] = ordered
+        attrs.update(actual_members)
+
+        return super().__new__(cls, name, bases, attrs)
+
+    def __iter__(self):
+        for member_name, label in self._ordered.items():
+            yield getattr(self, member_name), label
+
+
+class Denum(metaclass = DenumMeta):
+    pass
+
+
+class IntegerDenum(Denum):
+    foo = (1, 'John Stamos')
+    bar = (2, 'Dolph Lundgren')
+
+
 class CommandTests(TestCase):
     def setUp(self):
 
@@ -90,10 +132,14 @@ class CommandTests(TestCase):
                 JOHN_STAMOS = 'John Stamos'
                 DOLPH_LUNDGREN = 'Dolph Lundgren'
 
+            class INTEGER_DENUM(Xenum):
+                JOHN_STAMOS = 'John Stamos'
+                DOLPH_LUNDGREN = 'Dolph Lundgren'
+
             charfield = models.CharField(max_length=200)
             integer_choice = models.IntegerField(choices=INTEGER_CHOICES)
             char_choice = models.IntegerField(choices=CHAR_CHOICES)
-            integer_enum = models.IntegerField(choices=INTEGER_XENUM)
+            integer_enum = models.IntegerField(choices=INTEGER_DENUM)
             char_enum = models.IntegerField(choices=CHAR_ENUM)
 
         class MySerializer(serializers.ModelSerializer):
@@ -137,13 +183,13 @@ class CommandTests(TestCase):
         m = self.MyModel(
             # integer_choice=self.MyModel.DOLPH_LUNDGREN,
             # char_choice=self.MyModel.ALRIGHT,
-            integer_enum=self.MyModel.INTEGER_XENUM.DOLPH_LUNDGREN,
+            integer_enum=self.MyModel.INTEGER_DENUM.DOLPH_LUNDGREN,
             # char_enum=self.MyModel.CHAR_ENUM.VEF,
         )
         # print(dict(self.MyModel.INTEGER_XENUM))
         self.assertEqual(m.get_integer_enum_display(), 'Dolph Lundgren')
-        self.assertEqual(m.integer_enum, self.MyModel.INTEGER_XENUM.DOLPH_LUNDGREN)
-        print(renderers.JSONRenderer().render(self.MySerializer(m).data))
+        self.assertEqual(m.integer_enum, self.MyModel.INTEGER_DENUM.DOLPH_LUNDGREN)
+        # print(renderers.JSONRenderer().render(self.MySerializer(m).data))
         # self.assertEqual(self.MySerializer(m).data['integer_enum'], 2)
         # print(int(m.integer_enum))
         # m.save()
