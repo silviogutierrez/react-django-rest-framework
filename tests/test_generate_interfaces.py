@@ -16,7 +16,6 @@ def foo(enum):
 def integer_enum(enum):
     def __iter__(self):
         for index, (x, y) in enumerate(self.__members__.items()):
-            print(index, x, y, y.value)
             yield x, y.value
     enum.__class__.__iter__ = __iter__
     return enum
@@ -132,9 +131,9 @@ class CommandTests(TestCase):
                 JOHN_STAMOS = 'John Stamos'
                 DOLPH_LUNDGREN = 'Dolph Lundgren'
 
-            class INTEGER_DENUM(Xenum):
-                JOHN_STAMOS = 'John Stamos'
-                DOLPH_LUNDGREN = 'Dolph Lundgren'
+            class INTEGER_DENUM(Denum):
+                JOHN_STAMOS = (1, 'John Stamos')
+                DOLPH_LUNDGREN = (2, 'Dolph Lundgren')
 
             charfield = models.CharField(max_length=200)
             integer_choice = models.IntegerField(choices=INTEGER_CHOICES)
@@ -195,7 +194,13 @@ class CommandTests(TestCase):
         # m.save()
         # import pdb
         # pdb.set_trace()
-        # for name, field in self.MySerializer().fields.items():
+
+        for name, field in self.MySerializer().fields.items():
+            if isinstance(field, serializers.ChoiceField):
+                model_field = self.MySerializer.Meta.model._meta.get_field(name)
+
+                if type(model_field.choices) is DenumMeta:
+                    print('This is a denum', model_field.choices)
             # mapping = interface_field_mapping.get(type(field), 'any')
             # interface.append('    %s = %s;' % (name, mapping))
 
