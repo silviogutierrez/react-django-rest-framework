@@ -141,16 +141,16 @@ class CommandTests(TestCase):
             integer_enum = models.IntegerField(choices=INTEGER_DENUM)
             char_enum = models.IntegerField(choices=CHAR_ENUM)
 
-        class MySerializer(serializers.ModelSerializer):
+        class MyModelSerializer(serializers.ModelSerializer):
             class Meta:
                 model = MyModel
 
         class MyView(generics.ListCreateAPIView):
-            serializer_class = MySerializer
+            serializer_class = MyModelSerializer
             queryset = MyModel.objects.all()
 
         self.MyModel = MyModel
-        self.MySerializer = MySerializer
+        self.MyModelSerializer = MyModelSerializer
         self.MyView = MyView
 
     def test_iterate_over_enum(self):
@@ -188,19 +188,44 @@ class CommandTests(TestCase):
         # print(dict(self.MyModel.INTEGER_XENUM))
         self.assertEqual(m.get_integer_enum_display(), 'Dolph Lundgren')
         self.assertEqual(m.integer_enum, self.MyModel.INTEGER_DENUM.DOLPH_LUNDGREN)
-        # print(renderers.JSONRenderer().render(self.MySerializer(m).data))
-        # self.assertEqual(self.MySerializer(m).data['integer_enum'], 2)
+        # print(renderers.JSONRenderer().render(self.MyModelSerializer(m).data))
+        # self.assertEqual(self.MyModelSerializer(m).data['integer_enum'], 2)
         # print(int(m.integer_enum))
         # m.save()
         # import pdb
         # pdb.set_trace()
 
-        for name, field in self.MySerializer().fields.items():
+        class_members = []
+        class_methods = []
+
+        for name, field in self.MyModelSerializer().fields.items():
+            class_members.append('%s: string;' %  name)
+
             if isinstance(field, serializers.ChoiceField):
-                model_field = self.MySerializer.Meta.model._meta.get_field(name)
+                model_field = self.MyModelSerializer.Meta.model._meta.get_field(name)
 
                 if type(model_field.choices) is DenumMeta:
-                    print('This is a denum', model_field.choices)
+                    class_methods.append("""
+                    get_%s_display(): string {
+                        return 'oh yea.';
+                    }""" %  name)
+
+        if self.MyModelSerializer.__name__.endswith('Serializer'):
+            class_name = self.MyModelSerializer.__name__[:-10]
+        else:
+            class_name = self.MyModelSerializer.__name__
+
+        class_definition = """
+        class %(name)s {
+            %(class_members)s
+            %(class_methods)s
+        }
+        """ % {
+            'name': class_name,
+            'class_members': "\n".join(class_members),
+            'class_methods': "\n".join(class_methods),
+        }
+        print(class_definition)
             # mapping = interface_field_mapping.get(type(field), 'any')
             # interface.append('    %s = %s;' % (name, mapping))
 
