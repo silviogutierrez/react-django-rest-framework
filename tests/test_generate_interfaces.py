@@ -5,6 +5,8 @@ from enum import IntEnum, Enum, EnumMeta
 
 from rest_framework import serializers, renderers, generics
 
+import json
+
 
 def foo(enum):
     def __iter__(self):
@@ -31,6 +33,13 @@ def bar(enum):
 
     wrapped_enum.__class__.__iter__ = __iter__
     return wrapped_enum
+
+
+def stylize_class_name(name):
+    if name.endswith('Serializer'):
+        return name[:-10]
+    else:
+        return name
 
 
 class XenumMeta(EnumMeta):
@@ -71,7 +80,7 @@ class DenumMeta(type):
             if attr_name not in ATTRS_TO_EXCLUDE:
                 member_candidates[attr_name] = attr_value
 
-        actual_members = {}
+        actual_members = collections.OrderedDict()
         ordered = collections.OrderedDict()
 
         for member_name, (value, label) in member_candidates.items():
@@ -86,6 +95,10 @@ class DenumMeta(type):
     def __iter__(self):
         for member_name, label in self._ordered.items():
             yield getattr(self, member_name), label
+
+    def members(self):
+        for member_name, label in self._ordered.items():
+            yield member_name, getattr(self, member_name)
 
 
 class Denum(metaclass = DenumMeta):
@@ -140,8 +153,18 @@ class CommandTests(TestCase):
             char_choice = models.IntegerField(choices=CHAR_CHOICES)
             integer_enum = models.IntegerField(choices=INTEGER_DENUM)
             char_enum = models.IntegerField(choices=CHAR_ENUM)
+            related_model = models.ForeignKey('RelatedModel')
+
+        class RelatedModel(models.Model):
+            name = models.CharField(max_length=200)
+
+        class RelatedModelSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RelatedModel
 
         class MyModelSerializer(serializers.ModelSerializer):
+            related_model = RelatedModelSerializer()
+
             class Meta:
                 model = MyModel
 
@@ -152,31 +175,6 @@ class CommandTests(TestCase):
         self.MyModel = MyModel
         self.MyModelSerializer = MyModelSerializer
         self.MyView = MyView
-
-    def test_iterate_over_enum(self):
-
-        @foo
-        class Color(Enum):
-            red = "My first choice"
-            green = "My second choice"
-            blue = "My third choice"
-
-        class Widget(models.Model):
-            @bar
-            class STATUS(Enum):
-                ACCEPTED = (1, 'Accepted')
-                DENIED = (2 , 'Denied')
-
-            color = models.CharField(choices=STATUS)
-
-        class WidgetSerializer(serializers.ModelSerializer):
-            class Meta:
-                model = Widget
-
-        w = Widget(color=Widget.STATUS.ACCEPTED)
-        serializer = WidgetSerializer(w)
-        # print(w.get_color_display())
-        # print(renderers.JSONRenderer().render(serializer.data))
 
     def test_choice_fields(self):
         m = self.MyModel(
@@ -195,33 +193,66 @@ class CommandTests(TestCase):
         # import pdb
         # pdb.set_trace()
 
+
+        class_name = stylize_class_name(self.MyModelSerializer.__name__)
+        class_statics = []
+        class_constants = []
         class_members = []
         class_methods = []
 
-        for name, field in self.MyModelSerializer().fields.items():
-            class_members.append('%s: string;' %  name)
+        for name, attribute in vars(self.MyModelSerializer.Meta.model).items():
+            if type(attribute) is DenumMeta:
+                enum_members = ['%s = %s,' % (name, value) for name, value in attribute.members()]
+                # class_constants.append('%s: %s' % (name, 
+                class_constants.append("""
+                export enum %(enum_name)s {
+                    %(enum_members)s
+                }
+                """ % {
+                    'enum_name': name,
+                    'enum_members': "\n".join(enum_members),
+                })
 
-            if isinstance(field, serializers.ChoiceField):
+        for name, field in self.MyModelSerializer().fields.items():
+            if isinstance(field, serializers.ModelSerializer):
+                class_members.append('%s: %s;' %  (name,
+                                                   stylize_class_name(field.__class__.__name__)))
+            elif isinstance(field, serializers.ChoiceField):
                 model_field = self.MyModelSerializer.Meta.model._meta.get_field(name)
 
                 if type(model_field.choices) is DenumMeta:
-                    class_methods.append("""
-                    get_%s_display(): string {
-                        return 'oh yea.';
-                    }""" %  name)
+                    class_members.append('%s: %s.%s;' % (name, class_name, model_field.choices.__name__))
+                else:
+                    class_members.append('%s: any;' % name)
 
-        if self.MyModelSerializer.__name__.endswith('Serializer'):
-            class_name = self.MyModelSerializer.__name__[:-10]
-        else:
-            class_name = self.MyModelSerializer.__name__
+                class_statics.append('static %s = %s;' % (name, json.dumps(list(model_field.choices))))
+
+                class_methods.append("""
+                get_%(name)s_display(): string {
+                    const pair = %(class_name)s.%(name)s.find(choice => choice[0] == this.%(name)s);
+                    return pair ? pair[1] : null;
+                }""" %  {
+                    'name': name,
+                    'class_name': class_name,
+                })
+            else:
+                class_members.append('%s: string;' % name)
 
         class_definition = """
+        class RelatedModel {};
+
         class %(name)s {
             %(class_members)s
             %(class_methods)s
+            %(class_statics)s
+        }
+        module %(name)s {
+            %(class_constants)s
         }
         """ % {
             'name': class_name,
+            'class_statics': "\n".join(class_statics),
+            'class_constants': "\n".join(class_constants),
             'class_members': "\n".join(class_members),
             'class_methods': "\n".join(class_methods),
         }
