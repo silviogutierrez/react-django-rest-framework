@@ -59,6 +59,7 @@ def stylize_class_name(name):
 
 def export(SourceSerializer):
     class_name = stylize_class_name(SourceSerializer.__name__)
+    class_schema = []
     class_statics = []
     class_constants = []
     class_constants_map = {}
@@ -70,7 +71,7 @@ def export(SourceSerializer):
             # If this is a string enum
             if type(list(attribute.members())[0][1]) == str:
                 enum_members = ["%s: '%s'," % (name, value) for name, value in attribute.members()]
-                # class_constants.append('%s: %s' % (name, 
+                # class_constants.append('%s: %s' % (name,
                 class_statics.append("""
                 static %(enum_name)s = {
                     %(enum_members)s
@@ -93,7 +94,7 @@ def export(SourceSerializer):
 
             elif type(list(attribute.members())[0][1]) == int:
                 enum_members = ['%s = %s,' % (name, value) for name, value in attribute.members()]
-                # class_constants.append('%s: %s' % (name, 
+                # class_constants.append('%s: %s' % (name,
                 class_constants.append("""
                 export enum %(enum_name)s {
                     %(enum_members)s
@@ -118,18 +119,25 @@ def export(SourceSerializer):
             else:
                 class_members.append('%s: any;' % name)
 
-            class_statics.append('static %s = %s;' % (name, json.dumps(list(model_field.choices))))
+            # class_statics.append('static %s = %s;' % (name, json.dumps(list(model_field.choices))))
 
             class_methods.append("""
             get_%(name)s_display(): string {
-                const pair = %(class_name)s.%(name)s.find((choice: any) => choice[0] == this.%(name)s);
-                return pair ? pair[1] : null;
+                const choice = %(class_name)s.schema.%(name)s.choices.find(({display_name, value}: {display_name: string; value: string}) => value == this.%(name)s);
+                return choice ? choice.display_name : null;
             }""" %  {
                 'name': name,
                 'class_name': class_name,
             })
         else:
             class_members.append('%s: string;' % name)
+
+    metadata_handler = SimpleMetadata()
+    serializer_metadata = metadata_handler.get_serializer_info(SourceSerializer())
+
+    for field_name, field in serializer_metadata.items():
+        field['name'] = field_name
+        class_schema.append('%s: %s,' % (field_name, json.dumps(field)))
 
     class_definition = """
     class RelatedModel {};
@@ -142,6 +150,10 @@ def export(SourceSerializer):
         %(class_members)s
         %(class_methods)s
         %(class_statics)s
+
+        static schema = {
+            %(class_schema)s
+        };
     }
     export namespace %(name)s {
         %(class_constants)s
@@ -155,6 +167,7 @@ def export(SourceSerializer):
         'class_constants': "\n".join(class_constants),
         'class_members': "\n".join(class_members),
         'class_methods': "\n".join(class_methods),
+        'class_schema': "\n".join(class_schema),
     }
 
     from django.conf import settings
