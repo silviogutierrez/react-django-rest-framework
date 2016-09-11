@@ -57,6 +57,8 @@ def stylize_class_name(name):
         return name
 
 
+class_definitions = ["class RelatedModel {}"]
+
 def export(SourceSerializer):
     class_name = stylize_class_name(SourceSerializer.__name__)
     class_schema = []
@@ -107,8 +109,15 @@ def export(SourceSerializer):
             else:
                 assert False, "Unsupported enum type"
 
-    for name, field in SourceSerializer().fields.items():
-        if isinstance(field, serializers.ModelSerializer):
+    # request = factory.get('/')
+    # request.user = get_user_model()()
+    serializer_instance = SourceSerializer(read_only=True) #context={'request': request})
+
+    for name, field in serializer_instance.fields.items():
+        if isinstance(field, serializers.ListSerializer) and isinstance(field.child, serializers.ModelSerializer):
+            class_members.append('%s: %s[];' %  (name,
+                                               stylize_class_name(field.child.__class__.__name__)))
+        elif isinstance(field, serializers.ModelSerializer):
             class_members.append('%s: %s;' %  (name,
                                                stylize_class_name(field.__class__.__name__)))
         elif isinstance(field, serializers.ChoiceField):
@@ -122,7 +131,7 @@ def export(SourceSerializer):
             # class_statics.append('static %s = %s;' % (name, json.dumps(list(model_field.choices))))
 
             class_methods.append("""
-            get_%(name)s_display(): string {
+            get_%(name)s_display(): string|null {
                 const choice = %(class_name)s.schema.%(name)s.choices.find(({display_name, value}: {display_name: string; value: string}) => value == this.%(name)s);
                 return choice ? choice.display_name : null;
             }""" %  {
@@ -133,17 +142,15 @@ def export(SourceSerializer):
             class_members.append('%s: string;' % name)
 
     metadata_handler = SimpleMetadata()
-    serializer_metadata = metadata_handler.get_serializer_info(SourceSerializer())
+    serializer_metadata = metadata_handler.get_serializer_info(serializer_instance)
 
     for field_name, field in serializer_metadata.items():
         field['name'] = field_name
         class_schema.append('%s: %s,' % (field_name, json.dumps(field)))
 
     class_definition = """
-    class RelatedModel {};
-
-    export class %(name)s {
-        constructor(data: Food.Data) {
+        export class %(name)s {
+        constructor(data: %(name)s.Data) {
             Object.assign(this, data);
         }
 
@@ -170,14 +177,16 @@ def export(SourceSerializer):
         'class_schema': "\n".join(class_schema),
     }
 
+    class_definitions.append(class_definition)
+    return SourceSerializer
+
+
+def writeExports():
     from django.conf import settings
     import os
 
     with open(os.path.join(settings.BASE_DIR, 'react/exports.ts'), 'w') as f:
-        f.write(class_definition)
-
-    print(class_definition)
-    return SourceSerializer
+        f.write("\n".join(class_definitions))
 
 
 def generate_interface(SourceSerializer):
