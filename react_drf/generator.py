@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
 from django.test import RequestFactory
+from django.core.exceptions import FieldDoesNotExist
 
 from rest_framework import serializers
 from rest_framework.metadata import SimpleMetadata
@@ -109,19 +110,23 @@ def export(SourceSerializer):
             else:
                 assert False, "Unsupported enum type"
 
-    # request = factory.get('/')
-    # request.user = get_user_model()()
-    serializer_instance = SourceSerializer(read_only=True) #context={'request': request})
+    request = factory.get('/')
+    request.user = get_user_model()()
+    serializer_instance = SourceSerializer(read_only=True, context={'request': request})
 
     for name, field in serializer_instance.fields.items():
         if isinstance(field, serializers.ListSerializer) and isinstance(field.child, serializers.ModelSerializer):
             class_members.append('%s: %s[];' %  (name,
-                                               stylize_class_name(field.child.__class__.__name__)))
+                                            stylize_class_name(field.child.__class__.__name__)))
         elif isinstance(field, serializers.ModelSerializer):
             class_members.append('%s: %s;' %  (name,
-                                               stylize_class_name(field.__class__.__name__)))
+                                            stylize_class_name(field.__class__.__name__)))
         elif isinstance(field, serializers.ChoiceField):
-            model_field = SourceSerializer.Meta.model._meta.get_field(name)
+            try:
+                model_field = SourceSerializer.Meta.model._meta.get_field(name)
+            except FieldDoesNotExist:
+                continue
+                # Currently skipping serializer only choice fields.
 
             if type(model_field.choices) is DenumMeta:
                 class_members.append('%s: %s.%s;' % (name, class_name, class_constants_map[model_field.choices.__name__]))
