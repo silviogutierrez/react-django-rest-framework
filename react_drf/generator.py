@@ -143,6 +143,11 @@ def export(SourceSerializer):
                 'name': name,
                 'class_name': class_name,
             })
+        elif isinstance(field, serializers.IntegerField):
+            class_members.append('%s: number;' % name)
+        elif isinstance(field, serializers.PrimaryKeyRelatedField):
+            # TODO: primary key might not be a number.
+            class_members.append('%s: number;' % name)
         else:
             class_members.append('%s: string;' % name)
 
@@ -154,7 +159,8 @@ def export(SourceSerializer):
         class_schema.append('%s: %s,' % (field_name, json.dumps(field)))
 
     class_definition = """
-        export class %(name)s {
+    /*
+    export class %(name)s {
         constructor(data: %(name)s.Data) {
             Object.assign(this, data);
         }
@@ -167,11 +173,22 @@ def export(SourceSerializer):
             %(class_schema)s
         };
     }
+    */
+
+    export interface %(name)s {
+        %(class_members)s
+    }
+
     export namespace %(name)s {
+        export const schema = {
+            %(class_schema)s
+        };
         %(class_constants)s
+        /*
         export interface Data {
             %(class_members)s
         }
+        */
     }
     """ % {
         'name': class_name,
