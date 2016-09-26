@@ -115,6 +115,9 @@ def export(SourceSerializer):
     serializer_instance = SourceSerializer(read_only=True, context={'request': request})
 
     for name, field in serializer_instance.fields.items():
+        if name == 'units':
+            continue
+
         if isinstance(field, serializers.ListSerializer) and isinstance(field.child, serializers.ModelSerializer):
             class_members.append('%s: %s[];' %  (name,
                                             stylize_class_name(field.child.__class__.__name__)))
