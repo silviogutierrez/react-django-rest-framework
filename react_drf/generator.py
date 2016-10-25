@@ -151,7 +151,12 @@ def export(SourceSerializer):
         elif isinstance(field, serializers.PrimaryKeyRelatedField):
             # TODO: primary key might not be a number.
             class_members.append('%s: number;' % name)
+        elif isinstance(field, serializers.BooleanField):
+            class_members.append('%s: boolean;' % name)
+        elif isinstance(field, serializers.ManyRelatedField):
+            class_members.append('%s: number[];' % name)
         else:
+            print(name, field)
             class_members.append('%s: string;' % name)
 
     metadata_handler = SimpleMetadata()
