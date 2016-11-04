@@ -69,46 +69,47 @@ def export(SourceSerializer):
     class_members = []
     class_methods = []
 
-    for name, attribute in vars(SourceSerializer.Meta.model).items():
-        if type(attribute) is DenumMeta:
-            # If this is a string enum
-            if type(list(attribute.members())[0][1]) == str:
-                enum_members = ["%s: '%s'," % (name, value) for name, value in attribute.members()]
-                # class_constants.append('%s: %s' % (name,
-                class_statics.append("""
-                static %(enum_name)s = {
-                    %(enum_members)s
-                }
-                """ % {
-                    'enum_name': name,
-                    'enum_members': "\n".join(enum_members),
-                })
+    if issubclass(SourceSerializer, serializers.ModelSerializer):
+        for name, attribute in vars(SourceSerializer.Meta.model).items():
+            if type(attribute) is DenumMeta:
+                # If this is a string enum
+                if type(list(attribute.members())[0][1]) == str:
+                    enum_members = ["%s: '%s'," % (name, value) for name, value in attribute.members()]
+                    # class_constants.append('%s: %s' % (name,
+                    class_statics.append("""
+                    static %(enum_name)s = {
+                        %(enum_members)s
+                    }
+                    """ % {
+                        'enum_name': name,
+                        'enum_members': "\n".join(enum_members),
+                    })
 
-                # enum_members = ["%s = '%s'," % (name, value) for name, value in attribute.members()]
-                value_members = ["'%s'" % value for name, value in attribute.members()]
-                value_definition = """
-                export type %(enum_name)s_def = %(enum_members)s;
-                """ % {
-                    'enum_name': name,
-                    'enum_members': "|".join(value_members),
-                }
-                class_constants.append(value_definition)
-                class_constants_map[name] = '%s_def' % name
+                    # enum_members = ["%s = '%s'," % (name, value) for name, value in attribute.members()]
+                    value_members = ["'%s'" % value for name, value in attribute.members()]
+                    value_definition = """
+                    export type %(enum_name)s_def = %(enum_members)s;
+                    """ % {
+                        'enum_name': name,
+                        'enum_members': "|".join(value_members),
+                    }
+                    class_constants.append(value_definition)
+                    class_constants_map[name] = '%s_def' % name
 
-            elif type(list(attribute.members())[0][1]) == int:
-                enum_members = ['%s = %s,' % (name, value) for name, value in attribute.members()]
-                # class_constants.append('%s: %s' % (name,
-                class_constants.append("""
-                export enum %(enum_name)s {
-                    %(enum_members)s
-                }
-                """ % {
-                    'enum_name': name,
-                    'enum_members': "\n".join(enum_members),
-                })
-                class_constants_map[name] = name
-            else:
-                assert False, "Unsupported enum type"
+                elif type(list(attribute.members())[0][1]) == int:
+                    enum_members = ['%s = %s,' % (name, value) for name, value in attribute.members()]
+                    # class_constants.append('%s: %s' % (name,
+                    class_constants.append("""
+                    export enum %(enum_name)s {
+                        %(enum_members)s
+                    }
+                    """ % {
+                        'enum_name': name,
+                        'enum_members': "\n".join(enum_members),
+                    })
+                    class_constants_map[name] = name
+                else:
+                    assert False, "Unsupported enum type"
 
     request = factory.get('/')
     request.user = get_user_model()()
@@ -156,7 +157,6 @@ def export(SourceSerializer):
         elif isinstance(field, serializers.ManyRelatedField):
             class_members.append('%s: number[];' % name)
         else:
-            print(name, field)
             class_members.append('%s: string;' % name)
 
     metadata_handler = SimpleMetadata()
@@ -164,7 +164,15 @@ def export(SourceSerializer):
 
     for field_name, field in serializer_metadata.items():
         field['name'] = field_name
-        class_schema.append('%s: %s,' % (field_name, json.dumps(field)))
+        casted = json.dumps(field)
+
+        casted = casted.replace('"string"', '"string" as "string"')
+        casted = casted.replace('"email"', '"email" as "email"')
+        casted = casted.replace('"decimal"', '"decimal" as "decimal"')
+        casted = casted.replace('"integer"', '"integer" as "integer"')
+        casted = casted.replace('"boolean"', '"boolean" as "boolean"')
+        casted = casted.replace('"choice"', '"choice" as "choice"')
+        class_schema.append('%s: %s,' % (field_name, casted))
 
     class_definition = """
     /*
