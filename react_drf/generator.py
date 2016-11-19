@@ -123,8 +123,13 @@ def export(SourceSerializer):
             class_members.append('%s: %s[];' %  (name,
                                             stylize_class_name(field.child.__class__.__name__)))
         elif isinstance(field, serializers.ModelSerializer):
+            field_type = stylize_class_name(field.__class__.__name__)
+
+            if (field.allow_null):
+                field_type += '|null'
+
             class_members.append('%s: %s;' %  (name,
-                                            stylize_class_name(field.__class__.__name__)))
+                                            field_type))
         elif isinstance(field, serializers.ChoiceField):
             try:
                 model_field = SourceSerializer.Meta.model._meta.get_field(name)
@@ -151,13 +156,19 @@ def export(SourceSerializer):
             class_members.append('%s: number;' % name)
         elif isinstance(field, serializers.PrimaryKeyRelatedField):
             # TODO: primary key might not be a number.
-            class_members.append('%s: number;' % name)
+            if (field.allow_null):
+                class_members.append('%s: number|null;' % name)
+            else:
+                class_members.append('%s: number;' % name)
         elif isinstance(field, serializers.BooleanField):
             class_members.append('%s: boolean;' % name)
         elif isinstance(field, serializers.ManyRelatedField):
             class_members.append('%s: number[];' % name)
         else:
-            class_members.append('%s: string;' % name)
+            if (field.allow_null):
+                class_members.append('%s: string|null;' % name)
+            else:
+                class_members.append('%s: string;' % name)
 
     metadata_handler = SimpleMetadata()
     serializer_metadata = metadata_handler.get_serializer_info(serializer_instance)
