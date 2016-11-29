@@ -61,6 +61,7 @@ def stylize_class_name(name):
 class_definitions = ["class RelatedModel {}"]
 
 def export(SourceSerializer):
+    # return SourceSerializer
     class_name = stylize_class_name(SourceSerializer.__name__)
     class_schema = []
     class_statics = []
@@ -232,10 +233,26 @@ def export(SourceSerializer):
 
 def writeExports():
     from django.conf import settings
+    import json
     import os
 
-    with open(os.path.join(settings.BASE_DIR, 'react/exports.ts'), 'w') as f:
-        f.write("\n".join(class_definitions))
+    existing_deserialized_reference = None
+    destination = os.path.join(settings.BASE_DIR, 'react/exports.ts')
+
+    # See if we already have exports.
+    if os.path.isfile(destination):
+        with open(destination, 'r') as f:
+            # The last line is a comment with a serialized structure.
+            # Remove the '// ' and deserialize for comparison.
+            existing_deserialized_reference = json.loads(f.readlines()[-1][3:])
+
+    # Only write if the exports are not exactly the same.
+    if (class_definitions != existing_deserialized_reference):
+        serialized_reference = "\n// %s" % json.dumps(class_definitions)
+        contents_to_write = "\n".join(class_definitions) + serialized_reference
+
+        with open(destination, 'w') as f:
+            f.write(contents_to_write)
 
 
 def generate_interface(SourceSerializer):
