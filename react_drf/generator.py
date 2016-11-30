@@ -10,6 +10,7 @@ factory = RequestFactory()
 
 import collections
 import json
+import re
 
 
 class DenumMeta(type):
@@ -178,6 +179,7 @@ def export(SourceSerializer):
         field['name'] = field_name
         casted = json.dumps(field)
 
+        casted = re.sub(r'"name": ("(\w+)")', r'"name": \1 as \1', casted)
         casted = casted.replace('"string"', '"string" as "string"')
         casted = casted.replace('"email"', '"email" as "email"')
         casted = casted.replace('"decimal"', '"decimal" as "decimal"')
@@ -244,7 +246,11 @@ def writeExports():
         with open(destination, 'r') as f:
             # The last line is a comment with a serialized structure.
             # Remove the '// ' and deserialize for comparison.
-            existing_deserialized_reference = json.loads(f.readlines()[-1][3:])
+            try:
+                existing_deserialized_reference = json.loads(f.readlines()[-1][3:])
+            except Exception as e:
+                pass
+
 
     # Only write if the exports are not exactly the same.
     if (class_definitions != existing_deserialized_reference):
