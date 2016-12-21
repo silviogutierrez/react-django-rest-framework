@@ -58,10 +58,23 @@ def stylize_class_name(name):
     else:
         return name
 
-
+patterns_to_export = []
 class_definitions = ["class RelatedModel {}"]
 
-def export(SourceSerializer):
+
+def register_list_of_urls_for_export(patterns):
+    patterns_to_export.extend(patterns)
+    return patterns
+
+
+def export(*input):
+    if len(input) > 1:
+        return register_list_of_urls_for_export(input)
+    elif not len(input) == 1 or not issubclass(input[0], serializers.Serializer):
+        assert False, "Export only supports url patterns or serializers."
+    else:
+        SourceSerializer = input[0]
+
     # return SourceSerializer
     class_name = stylize_class_name(SourceSerializer.__name__)
     class_schema = []
@@ -233,10 +246,57 @@ def export(SourceSerializer):
     return SourceSerializer
 
 
+def process_patterns():
+
+    exported_views = []
+
+    from rest_framework import mixins
+    from django.core.urlresolvers import reverse
+
+    for pattern in patterns_to_export:
+        view_class = pattern.callback.view_class
+        serializer_class = view_class.serializer_class
+
+        model_name = stylize_class_name(serializer_class.__name__)
+        view_name = view_class.__name__
+        import pdb
+        pdb.set_trace()
+        # print(reverse(pattern.name))
+
+        if issubclass(view_class, mixins.ListModelMixin):
+            exported_views.append("""
+
+export const fetchFoods = () => {
+    return (dispatch: Dispatch) => {
+        dispatch({
+            type: '%(FETCH_REQUEST)s',
+        });
+
+        return api.get<%(model_name)s[]>('/api/foods/').then(response => {
+            dispatch({
+                type: '%(FETCH_SUCCESS)s',
+                foods: response.data,
+            });
+            return response.data;
+        });
+    };
+};
+                         """ % {
+                'model_name': model_name,
+                'FETCH_REQUEST': 'FETCH_%s_REQUEST' % view_name,
+                'FETCH_SUCCESS': 'FETCH_%s_SUCCESS' % view_name,
+                'FETCH_ERROR': 'FETCH_%s_ERROR' % view_name,
+            })
+
+    print(exported_views)
+
+
 def writeExports():
     from django.conf import settings
     import json
     import os
+
+    process_patterns()
 
     existing_deserialized_reference = None
     destination = os.path.join(settings.BASE_DIR, 'react/exports.ts')
