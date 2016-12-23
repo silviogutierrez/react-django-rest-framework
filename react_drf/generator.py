@@ -58,6 +58,19 @@ def stylize_class_name(name):
     else:
         return name
 
+def stylize_view_name(name):
+    if name.endswith('Detail'):
+        return name[:-6]
+    else:
+        return name
+
+def snake_case(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+def constant_case(name):
+    return snake_case(name).upper()
+
 patterns_to_export = []
 class_definitions = ["class RelatedModel {}"]
 
@@ -258,37 +271,265 @@ def process_patterns():
         serializer_class = view_class.serializer_class
 
         model_name = stylize_class_name(serializer_class.__name__)
-        view_name = view_class.__name__
-        import pdb
-        pdb.set_trace()
+        camel_case_model_name = model_name[0].lower() + model_name[1:]
+
+        view_name = stylize_view_name(view_class.__name__)
+        constant_name = constant_case(view_name)
+        camel_case_name = view_name[0].lower() + view_name[1:]
+
+        by_id_name = '%ssById' % camel_case_model_name
+        list_name = '%sList' % camel_case_model_name
+
+        reverse_args = ['%s' % (position * 1000) for key, position in pattern.regex.groupindex.items()]
+        url_with_placeholders = reverse(pattern.name, args=reverse_args)
+        function_args = []
+
+        for key, position in pattern.regex.groupindex.items():
+            function_args.append('%s: string|number' % key)
+            url_with_placeholders = url_with_placeholders.replace('%s' % (position * 1000), '${%s}' % key)
+
         # print(reverse(pattern.name))
+        FETCH_REQUEST = 'FETCH_%s_REQUEST' % constant_name
+        FETCH_SUCCESS = 'FETCH_%s_SUCCESS' % constant_name
+        FETCH_ERROR = 'FETCH_%s_ERROR' % constant_name
 
-        if issubclass(view_class, mixins.ListModelMixin):
-            exported_views.append("""
+        if issubclass(view_class, mixins.DestroyModelMixin):
+            FETCH_REQUEST = 'DELETE_%s_REQUEST' % constant_name
+            FETCH_SUCCESS = 'DELETE_%s_SUCCESS' % constant_name
+            FETCH_ERROR = 'DELETE_%s_ERROR' % constant_name
 
-export const fetchFoods = () => {
+            view_actions = [
+                """{type: '%s', %s: %s}""" % (FETCH_REQUEST, camel_case_name, model_name),
+                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
+                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+            ]
+
+            schema = [
+                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: [] as number[]' % (list_name),
+            ]
+            reducer_definition = """
+            // Currently we do not delete objects from the store.
+            """ % {
+                'camel_case_name': camel_case_name,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'by_id_name': by_id_name,
+                'list_name': list_name,
+            }
+            view_definition = """
+
+export const delete%(view_name)s = (item: %(model_name)s) => {
+    const pk = item.id;
+
     return (dispatch: Dispatch) => {
         dispatch({
             type: '%(FETCH_REQUEST)s',
+            %(camel_case_name)s: item,
         });
 
-        return api.get<%(model_name)s[]>('/api/foods/').then(response => {
+        return api.delete<%(model_name)s>(`%(url)s`).then(response => {
             dispatch({
                 type: '%(FETCH_SUCCESS)s',
-                foods: response.data,
+                %(camel_case_name)s: item,
+            });
+        });
+    };
+};
+                        """ % {
+                'args': ', '.join(function_args),
+                'view_name': view_name,
+                'model_name': model_name,
+                'camel_case_name': camel_case_name,
+                'FETCH_REQUEST': FETCH_REQUEST,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'FETCH_ERROR': FETCH_ERROR,
+                'url': url_with_placeholders,
+            }
+            exported_views.append({
+                'schema': schema,
+                'reducer': reducer_definition,
+                'definition': view_definition,
+                'actions': view_actions,
+            })
+
+        if issubclass(view_class, mixins.UpdateModelMixin):
+            FETCH_REQUEST = 'UPDATE_%s_REQUEST' % constant_name
+            FETCH_SUCCESS = 'UPDATE_%s_SUCCESS' % constant_name
+            FETCH_ERROR = 'UPDATE_%s_ERROR' % constant_name
+
+            view_actions = [
+                """{type: '%s', %s: %s}""" % (FETCH_REQUEST, camel_case_name, model_name),
+                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
+                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+            ]
+            schema = [
+                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: [] as number[]' % (list_name),
+            ]
+            reducer_definition = """
+case '%(FETCH_SUCCESS)s': {
+
+    const %(by_id_name)s = Object.assign({}, state.%(by_id_name)s, {[action.%(camel_case_name)s.id]: action.%(camel_case_name)s});
+    return Object.assign({}, state, {%(by_id_name)s});
+}
+            """ % {
+                'camel_case_name': camel_case_name,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'by_id_name': by_id_name,
+                'list_name': list_name,
+            }
+            view_definition = """
+
+export const update%(view_name)s = (item: %(model_name)s) => {
+    const pk = item.id;
+
+    return (dispatch: Dispatch) => {
+        dispatch({
+            type: '%(FETCH_REQUEST)s',
+            %(camel_case_name)s: item,
+        });
+
+        return api.put<%(model_name)s>(`%(url)s`, item).then(response => {
+            dispatch({
+                type: '%(FETCH_SUCCESS)s',
+                %(camel_case_name)s: response.data,
             });
             return response.data;
         });
     };
 };
-                         """ % {
+                        """ % {
+                'args': ', '.join(function_args),
+                'view_name': view_name,
                 'model_name': model_name,
-                'FETCH_REQUEST': 'FETCH_%s_REQUEST' % view_name,
-                'FETCH_SUCCESS': 'FETCH_%s_SUCCESS' % view_name,
-                'FETCH_ERROR': 'FETCH_%s_ERROR' % view_name,
+                'camel_case_name': camel_case_name,
+                'FETCH_REQUEST': FETCH_REQUEST,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'FETCH_ERROR': FETCH_ERROR,
+                'url': url_with_placeholders,
+            }
+            exported_views.append({
+                'schema': schema,
+                'reducer': reducer_definition,
+                'definition': view_definition,
+                'actions': view_actions,
+            })
+        if issubclass(view_class, mixins.RetrieveModelMixin):
+            view_actions = [
+                """{type: '%s'}""" % (FETCH_REQUEST),
+                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
+                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+            ]
+            schema = [
+                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: [] as number[]' % (list_name),
+            ]
+            reducer_definition = """
+case '%(FETCH_SUCCESS)s': {
+
+    const %(by_id_name)s = Object.assign({}, state.%(by_id_name)s, {[action.%(camel_case_name)s.id]: action.%(camel_case_name)s});
+    return Object.assign({}, state, {%(by_id_name)s});
+}
+            """ % {
+                'camel_case_name': camel_case_name,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'by_id_name': by_id_name,
+                'list_name': list_name,
+            }
+            view_definition = """
+
+export const fetch%(view_name)s = (%(args)s) => {
+    return (dispatch: Dispatch) => {
+        dispatch({
+            type: '%(FETCH_REQUEST)s',
+        });
+
+        return api.get<%(model_name)s>(`%(url)s`).then(response => {
+            dispatch({
+                type: '%(FETCH_SUCCESS)s',
+                %(camel_case_name)s: response.data,
+            });
+            return response.data;
+        });
+    };
+};
+                        """ % {
+                'args': ', '.join(function_args),
+                'view_name': view_name,
+                'model_name': model_name,
+                'camel_case_name': camel_case_name,
+                'FETCH_REQUEST': FETCH_REQUEST,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'FETCH_ERROR': FETCH_ERROR,
+                'url': url_with_placeholders,
+            }
+            exported_views.append({
+                'schema': schema,
+                'reducer': reducer_definition,
+                'definition': view_definition,
+                'actions': view_actions,
             })
 
-    print(exported_views)
+        if issubclass(view_class, mixins.ListModelMixin):
+            view_actions = [
+                """{type: '%s'}""" % (FETCH_REQUEST),
+                """{type: '%s', %s: %s[]}""" % (FETCH_SUCCESS, camel_case_name, model_name),
+                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+            ]
+            schema = [
+                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: [] as number[]' % (list_name),
+            ]
+            reducer_definition = """
+case '%(FETCH_SUCCESS)s': {
+    let %(by_id_name)s = Object.assign({}, state.%(by_id_name)s);
+    const %(list_name)s = action.%(camel_case_name)s.map(item => {
+        %(by_id_name)s[item.id] = item;
+        return item.id;
+    });
+    return Object.assign({}, state, {%(by_id_name)s, %(list_name)s});
+}
+            """ % {
+                'camel_case_name': camel_case_name,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'by_id_name': by_id_name,
+                'list_name': list_name,
+            }
+            view_definition = """
+
+export const fetch%(view_name)s = (%(args)s) => {
+    return (dispatch: Dispatch) => {
+        dispatch({
+            type: '%(FETCH_REQUEST)s',
+        });
+
+        return api.get<%(model_name)s[]>(`%(url)s`).then(response => {
+            dispatch({
+                type: '%(FETCH_SUCCESS)s',
+                %(camel_case_name)s: response.data,
+            });
+            return response.data;
+        });
+    };
+};
+                        """ % {
+                'args': ', '.join(function_args),
+                'view_name': view_name,
+                'model_name': model_name,
+                'camel_case_name': camel_case_name,
+                'FETCH_REQUEST': FETCH_REQUEST,
+                'FETCH_SUCCESS': FETCH_SUCCESS,
+                'FETCH_ERROR': FETCH_ERROR,
+                'url': url_with_placeholders,
+            }
+            exported_views.append({
+                'schema': schema,
+                'reducer': reducer_definition,
+                'definition': view_definition,
+                'actions': view_actions,
+            })
+
+    return exported_views
 
 
 def writeExports():
@@ -296,7 +537,10 @@ def writeExports():
     import json
     import os
 
-    process_patterns()
+    to_export = {
+        'views': process_patterns(),
+        'models': class_definitions,
+    }
 
     existing_deserialized_reference = None
     destination = os.path.join(settings.BASE_DIR, 'react/exports.ts')
@@ -311,11 +555,45 @@ def writeExports():
             except Exception as e:
                 pass
 
-
     # Only write if the exports are not exactly the same.
-    if (class_definitions != existing_deserialized_reference):
-        serialized_reference = "\n// %s" % json.dumps(class_definitions)
-        contents_to_write = "\n".join(class_definitions) + serialized_reference
+    if True or (to_export != existing_deserialized_reference):
+        print('We are different')
+        serialized_reference = "\n// %s" % json.dumps(to_export)
+
+        # This flattens an array of arrays. See
+        # See: http://stackoverflow.com/a/952946
+        actions = sum([view['actions'] for view in to_export['views']], [])
+        state = set(sum([view['schema'] for view in to_export['views']], []))
+
+        views = [view['definition'] for view in to_export['views']]
+        reducers = [view['reducer'] for view in to_export['views']]
+
+        reducer = """
+
+export const initialState = {
+    %s
+};
+
+export const reducer = (state = initialState, action: Action) => {
+    switch (action.type) {
+        %s
+        default: {
+            return state;
+        }
+    }
+}
+
+""" % (",\n".join(state), "\n".join(reducers))
+
+        contents_to_write = ""
+        contents_to_write += "import {Action, Dispatch} from 'client/reducer'\n";
+        contents_to_write += "import {api} from 'client/api'\n";
+        contents_to_write += "export type Actions = %s" % "|".join(actions)
+        contents_to_write += reducer
+        contents_to_write += "\n".join(views)
+        contents_to_write += "\n"
+        contents_to_write += "\n".join(to_export['models'])
+        contents_to_write += serialized_reference
 
         with open(destination, 'w') as f:
             f.write(contents_to_write)
