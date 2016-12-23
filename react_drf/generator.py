@@ -61,6 +61,8 @@ def stylize_class_name(name):
 def stylize_view_name(name):
     if name.endswith('Detail'):
         return name[:-6]
+    if name.endswith('List'):
+        return name[:-4] + 's'
     else:
         return name
 
@@ -280,7 +282,7 @@ def process_patterns():
         key_name = view_class.lookup_field if view_class.lookup_field != 'pk' else 'id'
         key_type = 'string' if view_class.lookup_field != 'pk' else 'number'
 
-        by_key_name = '%ssByKey' % camel_case_model_name
+        by_key_name = '%ssById' % camel_case_model_name
         list_name = '%sList' % camel_case_model_name
 
         reverse_args = ['%s' % (position * 1000) for key, position in pattern.regex.groupindex.items()]
@@ -304,6 +306,59 @@ def process_patterns():
             'key_name': key_name,
         }
 
+        if issubclass(view_class, mixins.CreateModelMixin):
+            context = {**base_context, **dict(
+                view_name=view_class.__name__[:-4],
+                FETCH_REQUEST='CREATE_%s_REQUEST' % constant_case(view_class.__name__[:-4]),
+                FETCH_SUCCESS='CREATE_%s_SUCCESS' % constant_case(view_class.__name__[:-4]),
+                FETCH_ERROR='CREATE_%s_ERROR' % constant_case(view_class.__name__[:-4]),
+                camel_case_name = model_name[0].lower() + model_name[1:]
+            )}
+
+            view_actions = [
+                """{type: '%(FETCH_REQUEST)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_SUCCESS)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_ERROR)s', errors: any}""" % context,
+            ]
+
+            schema = [
+                '%s: {} as {[%s: %s]: %s}' % (by_key_name, key_name, key_type, model_name),
+                '%s: [] as number[]' % (list_name),
+            ]
+
+            reducer_definition = """
+case '%(FETCH_SUCCESS)s': {
+
+    const %(by_key_name)s = Object.assign({}, state.%(by_key_name)s, {[action.%(camel_case_name)s.%(key_name)s]: action.%(camel_case_name)s});
+    return Object.assign({}, state, {%(by_key_name)s});
+}
+            """ % context
+            view_definition = """
+
+export const create%(view_name)s = (item: %(model_name)s) => {
+    const %(lookup_field)s = item.%(key_name)s;
+
+    return (dispatch: Dispatch) => {
+        dispatch({
+            type: '%(FETCH_REQUEST)s',
+            %(camel_case_name)s: item,
+        });
+
+        return api.put<%(model_name)s>(`%(url)s`, item).then(response => {
+            dispatch({
+                type: '%(FETCH_SUCCESS)s',
+                %(camel_case_name)s: response.data,
+            });
+            return response.data;
+        });
+    };
+};""" % context
+            exported_views.append({
+                'schema': schema,
+                'reducer': reducer_definition,
+                'definition': view_definition,
+                'actions': view_actions,
+            })
         if issubclass(view_class, mixins.DestroyModelMixin):
             context = {**base_context, **dict(
                 FETCH_REQUEST='DELETE_%s_REQUEST' % constant_name,
