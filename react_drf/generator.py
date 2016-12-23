@@ -277,7 +277,10 @@ def process_patterns():
         constant_name = constant_case(view_name)
         camel_case_name = view_name[0].lower() + view_name[1:]
 
-        by_id_name = '%ssById' % camel_case_model_name
+        key_name = view_class.lookup_field if view_class.lookup_field != 'pk' else 'id'
+        key_type = 'string' if view_class.lookup_field != 'pk' else 'number'
+
+        by_key_name = '%ssByKey' % camel_case_model_name
         list_name = '%sList' % camel_case_model_name
 
         reverse_args = ['%s' % (position * 1000) for key, position in pattern.regex.groupindex.items()]
@@ -289,37 +292,42 @@ def process_patterns():
             url_with_placeholders = url_with_placeholders.replace('%s' % (position * 1000), '${%s}' % key)
 
         # print(reverse(pattern.name))
-        FETCH_REQUEST = 'FETCH_%s_REQUEST' % constant_name
-        FETCH_SUCCESS = 'FETCH_%s_SUCCESS' % constant_name
-        FETCH_ERROR = 'FETCH_%s_ERROR' % constant_name
+        base_context = {
+            'lookup_field': view_class.lookup_field,
+            'args': ', '.join(function_args),
+            'view_name': view_name,
+            'model_name': model_name,
+            'camel_case_name': camel_case_name,
+            'url': url_with_placeholders,
+            'list_name': list_name,
+            'by_key_name': by_key_name,
+            'key_name': key_name,
+        }
 
         if issubclass(view_class, mixins.DestroyModelMixin):
-            FETCH_REQUEST = 'DELETE_%s_REQUEST' % constant_name
-            FETCH_SUCCESS = 'DELETE_%s_SUCCESS' % constant_name
-            FETCH_ERROR = 'DELETE_%s_ERROR' % constant_name
+            context = {**base_context, **dict(
+                FETCH_REQUEST='DELETE_%s_REQUEST' % constant_name,
+                FETCH_SUCCESS='DELETE_%s_SUCCESS' % constant_name,
+                FETCH_ERROR='DELETE_%s_ERROR' % constant_name,
+            )}
 
             view_actions = [
-                """{type: '%s', %s: %s}""" % (FETCH_REQUEST, camel_case_name, model_name),
-                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
-                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+                """{type: '%(FETCH_REQUEST)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_SUCCESS)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_ERROR)s', errors: any}""" % context,
             ]
 
             schema = [
-                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: {} as {[%s: %s]: %s}' % (by_key_name, key_name, key_type, model_name),
                 '%s: [] as number[]' % (list_name),
             ]
             reducer_definition = """
             // Currently we do not delete objects from the store.
-            """ % {
-                'camel_case_name': camel_case_name,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'by_id_name': by_id_name,
-                'list_name': list_name,
-            }
+            """ % context
             view_definition = """
 
 export const delete%(view_name)s = (item: %(model_name)s) => {
-    const pk = item.id;
+    const %(lookup_field)s = item.%(key_name)s;
 
     return (dispatch: Dispatch) => {
         dispatch({
@@ -335,16 +343,7 @@ export const delete%(view_name)s = (item: %(model_name)s) => {
         });
     };
 };
-                        """ % {
-                'args': ', '.join(function_args),
-                'view_name': view_name,
-                'model_name': model_name,
-                'camel_case_name': camel_case_name,
-                'FETCH_REQUEST': FETCH_REQUEST,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'FETCH_ERROR': FETCH_ERROR,
-                'url': url_with_placeholders,
-            }
+                        """ % context
             exported_views.append({
                 'schema': schema,
                 'reducer': reducer_definition,
@@ -353,35 +352,32 @@ export const delete%(view_name)s = (item: %(model_name)s) => {
             })
 
         if issubclass(view_class, mixins.UpdateModelMixin):
-            FETCH_REQUEST = 'UPDATE_%s_REQUEST' % constant_name
-            FETCH_SUCCESS = 'UPDATE_%s_SUCCESS' % constant_name
-            FETCH_ERROR = 'UPDATE_%s_ERROR' % constant_name
+            context = {**base_context, **dict(
+                FETCH_REQUEST='UPDATE_%s_REQUEST' % constant_name,
+                FETCH_SUCCESS='UPDATE_%s_SUCCESS' % constant_name,
+                FETCH_ERROR='UPDATE_%s_ERROR' % constant_name,
+            )}
 
             view_actions = [
-                """{type: '%s', %s: %s}""" % (FETCH_REQUEST, camel_case_name, model_name),
-                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
-                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+                """{type: '%(FETCH_REQUEST)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_SUCCESS)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_ERROR)s', errors: any}""" % context,
             ]
             schema = [
-                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: {} as {[%s: %s]: %s}' % (by_key_name, key_name, key_type, model_name),
                 '%s: [] as number[]' % (list_name),
             ]
             reducer_definition = """
 case '%(FETCH_SUCCESS)s': {
 
-    const %(by_id_name)s = Object.assign({}, state.%(by_id_name)s, {[action.%(camel_case_name)s.id]: action.%(camel_case_name)s});
-    return Object.assign({}, state, {%(by_id_name)s});
+    const %(by_key_name)s = Object.assign({}, state.%(by_key_name)s, {[action.%(camel_case_name)s.%(key_name)s]: action.%(camel_case_name)s});
+    return Object.assign({}, state, {%(by_key_name)s});
 }
-            """ % {
-                'camel_case_name': camel_case_name,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'by_id_name': by_id_name,
-                'list_name': list_name,
-            }
+            """ % context
             view_definition = """
 
 export const update%(view_name)s = (item: %(model_name)s) => {
-    const pk = item.id;
+    const %(lookup_field)s = item.%(key_name)s;
 
     return (dispatch: Dispatch) => {
         dispatch({
@@ -398,16 +394,7 @@ export const update%(view_name)s = (item: %(model_name)s) => {
         });
     };
 };
-                        """ % {
-                'args': ', '.join(function_args),
-                'view_name': view_name,
-                'model_name': model_name,
-                'camel_case_name': camel_case_name,
-                'FETCH_REQUEST': FETCH_REQUEST,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'FETCH_ERROR': FETCH_ERROR,
-                'url': url_with_placeholders,
-            }
+                        """ % context
             exported_views.append({
                 'schema': schema,
                 'reducer': reducer_definition,
@@ -415,27 +402,28 @@ export const update%(view_name)s = (item: %(model_name)s) => {
                 'actions': view_actions,
             })
         if issubclass(view_class, mixins.RetrieveModelMixin):
+            context = {**base_context, **dict(
+                FETCH_REQUEST='FETCH_%s_REQUEST' % constant_name,
+                FETCH_SUCCESS='FETCH_%s_SUCCESS' % constant_name,
+                FETCH_ERROR='FETCH_%s_ERROR' % constant_name,
+            )}
             view_actions = [
-                """{type: '%s'}""" % (FETCH_REQUEST),
-                """{type: '%s', %s: %s}""" % (FETCH_SUCCESS, camel_case_name, model_name),
-                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+                """{type: '%(FETCH_REQUEST)s'}""" % context,
+                """{type: '%(FETCH_SUCCESS)s', %(camel_case_name)s: %(model_name)s}""" % context,
+                """{type: '%(FETCH_ERROR)s', errors: any}""" % context,
             ]
             schema = [
-                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: {} as {[%s: %s]: %s}' % (by_key_name, key_name, key_type, model_name),
                 '%s: [] as number[]' % (list_name),
             ]
             reducer_definition = """
 case '%(FETCH_SUCCESS)s': {
 
-    const %(by_id_name)s = Object.assign({}, state.%(by_id_name)s, {[action.%(camel_case_name)s.id]: action.%(camel_case_name)s});
-    return Object.assign({}, state, {%(by_id_name)s});
+    const %(by_key_name)s = Object.assign({}, state.%(by_key_name)s, {[action.%(camel_case_name)s.%(key_name)s]: action.%(camel_case_name)s});
+    return Object.assign({}, state, {%(by_key_name)s});
 }
-            """ % {
-                'camel_case_name': camel_case_name,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'by_id_name': by_id_name,
-                'list_name': list_name,
-            }
+            """ % context
+
             view_definition = """
 
 export const fetch%(view_name)s = (%(args)s) => {
@@ -453,16 +441,7 @@ export const fetch%(view_name)s = (%(args)s) => {
         });
     };
 };
-                        """ % {
-                'args': ', '.join(function_args),
-                'view_name': view_name,
-                'model_name': model_name,
-                'camel_case_name': camel_case_name,
-                'FETCH_REQUEST': FETCH_REQUEST,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'FETCH_ERROR': FETCH_ERROR,
-                'url': url_with_placeholders,
-            }
+                        """ % context
             exported_views.append({
                 'schema': schema,
                 'reducer': reducer_definition,
@@ -471,30 +450,30 @@ export const fetch%(view_name)s = (%(args)s) => {
             })
 
         if issubclass(view_class, mixins.ListModelMixin):
+            context = {**base_context, **dict(
+                FETCH_REQUEST='FETCH_%s_REQUEST' % constant_name,
+                FETCH_SUCCESS='FETCH_%s_SUCCESS' % constant_name,
+                FETCH_ERROR='FETCH_%s_ERROR' % constant_name,
+            )}
             view_actions = [
-                """{type: '%s'}""" % (FETCH_REQUEST),
-                """{type: '%s', %s: %s[]}""" % (FETCH_SUCCESS, camel_case_name, model_name),
-                """{type: '%s', errors: any}""" % (FETCH_ERROR),
+                """{type: '%(FETCH_REQUEST)s'}""" % context,
+                """{type: '%(FETCH_SUCCESS)s', %(camel_case_name)s: %(model_name)s[]}""" % context,
+                """{type: '%(FETCH_ERROR)s', errors: any}""" % context,
             ]
             schema = [
-                '%s: {} as {[id: number]: %s}' % (by_id_name, model_name),
+                '%s: {} as {[%s: %s]: %s}' % (by_key_name, key_name, key_type, model_name),
                 '%s: [] as number[]' % (list_name),
             ]
             reducer_definition = """
 case '%(FETCH_SUCCESS)s': {
-    let %(by_id_name)s = Object.assign({}, state.%(by_id_name)s);
+    let %(by_key_name)s = Object.assign({}, state.%(by_key_name)s);
     const %(list_name)s = action.%(camel_case_name)s.map(item => {
-        %(by_id_name)s[item.id] = item;
-        return item.id;
+        %(by_key_name)s[item.%(key_name)s] = item;
+        return item.%(key_name)s;
     });
-    return Object.assign({}, state, {%(by_id_name)s, %(list_name)s});
+    return Object.assign({}, state, {%(by_key_name)s, %(list_name)s});
 }
-            """ % {
-                'camel_case_name': camel_case_name,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'by_id_name': by_id_name,
-                'list_name': list_name,
-            }
+            """ % context
             view_definition = """
 
 export const fetch%(view_name)s = (%(args)s) => {
@@ -512,16 +491,7 @@ export const fetch%(view_name)s = (%(args)s) => {
         });
     };
 };
-                        """ % {
-                'args': ', '.join(function_args),
-                'view_name': view_name,
-                'model_name': model_name,
-                'camel_case_name': camel_case_name,
-                'FETCH_REQUEST': FETCH_REQUEST,
-                'FETCH_SUCCESS': FETCH_SUCCESS,
-                'FETCH_ERROR': FETCH_ERROR,
-                'url': url_with_placeholders,
-            }
+                        """ % context
             exported_views.append({
                 'schema': schema,
                 'reducer': reducer_definition,
