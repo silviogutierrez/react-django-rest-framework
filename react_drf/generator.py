@@ -599,7 +599,7 @@ export const initialState = {
     %s
 };
 
-export const reducer = (state = initialState, action: Action) => {
+export const reducer = <T extends typeof initialState>(state: T, action: Action): T => {
     switch (action.type) {
         %s
         default: {
