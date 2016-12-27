@@ -344,7 +344,7 @@ export const create%(view_name)s = (item: %(model_name)s) => {
             %(camel_case_name)s: item,
         });
 
-        return api.put<%(model_name)s>(`%(url)s`, item).then(response => {
+        return api.post<%(model_name)s>(`%(url)s`, item).then(response => {
             dispatch({
                 type: '%(FETCH_SUCCESS)s',
                 %(camel_case_name)s: response.data,
@@ -582,7 +582,6 @@ def writeExports():
 
     # Only write if the exports are not exactly the same.
     if True or (to_export != existing_deserialized_reference):
-        print('We are different')
         serialized_reference = "\n// %s" % json.dumps(to_export)
 
         # This flattens an array of arrays. See
