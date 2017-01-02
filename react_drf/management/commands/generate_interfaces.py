@@ -1,12 +1,16 @@
-from django.core.management.base import AppCommand
+from django.core.management.base import NoArgsCommand
 
 from rest_framework import serializers
 
 from react_drf import generator
 
 
-class Command(AppCommand):
-    def handle_app_config(self, app, **options):
+class Command(NoArgsCommand):
+    def handle(self, **options):
+        from react_drf.generator import writeExports
+        writeExports()
+
+        """
         print("/* tslint:disable */\nimport * as React from 'react';")
         for name, val in app.module.serializers.__dict__.items():
             try:
@@ -15,3 +19,4 @@ class Command(AppCommand):
                     generator.generate_form(val)
             except TypeError as e:
                 pass
+        """
