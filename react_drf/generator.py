@@ -74,7 +74,7 @@ def constant_case(name):
     return snake_case(name).upper()
 
 patterns_to_export = []
-class_definitions = ["class RelatedModel {}"]
+serializers_to_export = []
 
 
 def register_list_of_urls_for_export(patterns):
@@ -89,7 +89,17 @@ def export(*input):
         assert False, "Export only supports url patterns or serializers."
     else:
         SourceSerializer = input[0]
+        serializers_to_export.append(SourceSerializer)
+        return SourceSerializer
 
+def process_serializers():
+    class_definitions = ["class RelatedModel {}"]
+
+    for SourceSerializer in serializers_to_export:
+        process_serializer(class_definitions, SourceSerializer)
+    return class_definitions
+
+def process_serializer(class_definitions, SourceSerializer):
     # return SourceSerializer
     class_name = stylize_class_name(SourceSerializer.__name__)
     class_schema = []
@@ -258,8 +268,6 @@ def export(*input):
     }
 
     class_definitions.append(class_definition)
-    return SourceSerializer
-
 
 def process_patterns():
 
@@ -564,7 +572,7 @@ def writeExports():
 
     to_export = {
         'views': process_patterns(),
-        'models': class_definitions,
+        'models': process_serializers(),
     }
 
     existing_deserialized_reference = None
