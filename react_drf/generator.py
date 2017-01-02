@@ -568,7 +568,7 @@ def writeExports():
     }
 
     existing_deserialized_reference = None
-    destination = os.path.join(settings.BASE_DIR, 'react/exports.ts')
+    destination = os.path.join(settings.BASE_DIR, 'client/exports.ts')
 
     # See if we already have exports.
     if os.path.isfile(destination):
