@@ -192,6 +192,8 @@ def process_serializer(class_definitions, SourceSerializer):
                 'name': name,
                 'class_name': class_name,
             })
+        elif isinstance(field, serializers.JSONField):
+            class_members.append('%s: {[name: string]: any};' % name)
         elif isinstance(field, serializers.IntegerField):
             class_members.append('%s: number;' % name)
         elif isinstance(field, serializers.PrimaryKeyRelatedField):
