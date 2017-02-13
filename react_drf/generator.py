@@ -1,7 +1,8 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import FieldDoesNotExist
+from django.core.urlresolvers import RegexURLPattern
 from django.template.loader import render_to_string
 from django.test import RequestFactory
-from django.core.exceptions import FieldDoesNotExist
 
 from rest_framework import serializers
 from rest_framework.metadata import SimpleMetadata
@@ -83,7 +84,7 @@ def register_list_of_urls_for_export(patterns):
 
 
 def export(*input):
-    if len(input) > 1:
+    if len(input) > 1 or type(input[0]) == RegexURLPattern:
         return register_list_of_urls_for_export(input)
     elif not len(input) == 1 or not issubclass(input[0], serializers.Serializer):
         assert False, "Export only supports url patterns or serializers."
