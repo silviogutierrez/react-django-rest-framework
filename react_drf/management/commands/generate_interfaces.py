@@ -1,11 +1,11 @@
-from django.core.management.base import NoArgsCommand
+from django.core.management.base import BaseCommand
 
 from rest_framework import serializers
 
 from react_drf import generator
 
 
-class Command(NoArgsCommand):
+class Command(BaseCommand):
     def handle(self, **options):
         from react_drf.generator import writeExports
         writeExports()
