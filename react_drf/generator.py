@@ -153,7 +153,12 @@ def process_serializer(class_definitions, SourceSerializer):
                     assert False, "Unsupported enum type"
 
     request = factory.get('/')
-    request.user = get_user_model()()
+    user = get_user_model()()
+
+    # Hard coded for now
+    from apps.journal.models import Profile
+    user.profile = Profile()
+    request.user = user
     serializer_instance = SourceSerializer(read_only=True, context={'request': request})
 
     for name, field in serializer_instance.fields.items():
