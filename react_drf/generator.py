@@ -83,15 +83,60 @@ def register_list_of_urls_for_export(patterns):
     return patterns
 
 
-def export(*input):
+def export(*input, **kwargs):
+    if kwargs:
+        return bind_export(**kwargs)
+    return bind_export()(*input)
+"""
+
     if len(input) > 1 or type(input[0]) == RegexURLPattern:
         return register_list_of_urls_for_export(input)
     elif not len(input) == 1 or not issubclass(input[0], serializers.Serializer):
         assert False, "Export only supports url patterns or serializers."
     else:
         SourceSerializer = input[0]
-        serializers_to_export.append(SourceSerializer)
-        return SourceSerializer
+
+        class Wrapped(SourceSerializer):
+            _original_name = SourceSerializer.__name__
+
+            type = serializers.SerializerMethodField()
+
+            def get_type(self, obj):
+                return snake_case(stylize_class_name(SourceSerializer.__name__))
+
+            if hasattr(SourceSerializer, 'Meta') and hasattr(SourceSerializer.Meta, 'fields'):
+                class Meta(SourceSerializer.Meta):
+                    fields = (list(SourceSerializer.Meta.fields) + ['type']) if SourceSerializer.Meta.fields != '__all__' else '__all__'
+
+        serializers_to_export.append(Wrapped)
+        return Wrapped
+"""
+
+def bind_export(discriminate=False):
+    def _export(*input):
+        if len(input) > 1 or type(input[0]) == RegexURLPattern:
+            return register_list_of_urls_for_export(input)
+        elif not len(input) == 1 or not issubclass(input[0], serializers.Serializer):
+            assert False, "Export only supports url patterns or serializers."
+        else:
+            SourceSerializer = input[0]
+
+            class Wrapped(SourceSerializer):
+                _original_name = SourceSerializer.__name__
+
+                if discriminate:
+                    type = serializers.SerializerMethodField()
+
+                    def get_type(self, obj):
+                        return snake_case(stylize_class_name(SourceSerializer.__name__))
+
+                    if hasattr(SourceSerializer, 'Meta') and hasattr(SourceSerializer.Meta, 'fields'):
+                        class Meta(SourceSerializer.Meta):
+                            fields = (list(SourceSerializer.Meta.fields) + ['type']) if SourceSerializer.Meta.fields != '__all__' else '__all__'
+
+            serializers_to_export.append(Wrapped)
+            return Wrapped
+    return _export
 
 def process_serializers():
     class_definitions = ["class RelatedModel {}"]
@@ -102,7 +147,7 @@ def process_serializers():
 
 def process_serializer(class_definitions, SourceSerializer):
     # return SourceSerializer
-    class_name = stylize_class_name(SourceSerializer.__name__)
+    class_name = stylize_class_name(SourceSerializer._original_name)
     class_schema = []
     class_statics = []
     class_constants = []
@@ -165,11 +210,15 @@ def process_serializer(class_definitions, SourceSerializer):
         if name == 'units':
             continue
 
+        if name == 'type' and isinstance(field, serializers.SerializerMethodField):
+            class_members.append("%s: '%s';" %  (name, snake_case(stylize_class_name(SourceSerializer._original_name))))
+            continue
+
         if isinstance(field, serializers.ListSerializer) and isinstance(field.child, serializers.ModelSerializer):
             class_members.append('%s: %s[];' %  (name,
-                                            stylize_class_name(field.child.__class__.__name__)))
+                                            stylize_class_name(field.child.__class__._original_name)))
         elif isinstance(field, serializers.ModelSerializer):
-            field_type = stylize_class_name(field.__class__.__name__)
+            field_type = stylize_class_name(field.__class__._original_name)
 
             if (field.allow_null):
                 field_type += '|null'
@@ -290,7 +339,7 @@ def process_patterns():
         view_class = pattern.callback.view_class
         serializer_class = view_class.serializer_class
 
-        model_name = stylize_class_name(serializer_class.__name__)
+        model_name = stylize_class_name(serializer_class._original_name)
         camel_case_model_name = model_name[0].lower() + model_name[1:]
 
         view_name = stylize_view_name(view_class.__name__)
