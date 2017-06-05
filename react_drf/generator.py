@@ -278,6 +278,8 @@ def process_serializer(class_definitions, SourceSerializer):
 
         casted = re.sub(r'"name": ("(\w+)")', r'"name": \1 as \1', casted)
         casted = casted.replace('"string"', '"string" as "string"')
+        casted = casted.replace('"datetime"', '"datetime" as "datetime"')
+        casted = casted.replace('"field"', '"field" as "field"')
         casted = casted.replace('"email"', '"email" as "email"')
         casted = casted.replace('"decimal"', '"decimal" as "decimal"')
         casted = casted.replace('"integer"', '"integer" as "integer"')
